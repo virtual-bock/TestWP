@@ -1,0 +1,78 @@
+- name: Roll Out Wordpress
+  hosts: awowcat.fritz.box
+  user: rbock
+  become: true
+  gather_facts: false
+  vars_files:
+        - config_wp11.yml
+
+  tasks:
+  - name: Create Application Pod
+    containers.podman.podman_pod:
+        name: "{{ pod_name }}"
+        state: started
+        ports:
+          - "{{ app_port }}:80"
+          - "{{ app_port_secure }}:443"
+
+  - name: Create Container Directory DB
+    ansible.builtin.file:
+        path: "{{ pod_dir }}/{{ db_local_dir }}"
+        state: directory
+
+  - name: Create Container Directory WP
+    ansible.builtin.file:
+        path: "{{ pod_dir }}/{{ app_local_dir }}"
+        state: directory
+
+  - name: Create MySQL Database for WP
+    containers.podman.podman_container:
+        name: "{{ db_name }}"
+        image: "{{ db_image }}"
+        state: started
+        pod: "{{ pod_name }}"
+        volumes:
+          - "{{ pod_dir }}/{{ db_local_dir }}:{{ db_pod_dir }}:Z"
+        env:
+          MARIADB_ROOT_PASSWORD: "{{ db_root_pwd }}"
+          MARIADB_DATABASE: "{{ db_name }}"
+          MARIADB_USER: "{{ db_user }}"
+          MARIADB_PASSWORD: "{{ db_pwd }}"
+
+  - name: Create and run WP Container
+    containers.podman.podman_container:
+        pod: "{{ pod_name }}"
+        name: "{{ app_name }}"
+        image: "{{ app_image }}"
+        state: started
+        volumes:
+          - "{{ pod_dir }}/{{ app_local_dir }}:{{ app_pod_dir }}:Z"
+        env:
+          WORDPRESS_DB_HOST: "127.0.0.1"
+          WORDPRESS_DB_NAME: "{{ db_name }}"
+          WORDPRESS_DB_USER: "{{ db_user }}"
+          WORDPRESS_DB_PASSWORD: "{{ db_pwd }}"
+          WORDPRESS_CONFIG_EXTRA: |
+            if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https') {
+            	$_SERVER['HTTPS'] = 'on';
+              $_SERVER['SERVER_PORT'] = 443;
+            }
+            
+            if (!empty($_SERVER['HTTP_X_FORWARDED_HOST'])) {
+              $_SERVER['HTTP_HOST'] = $_SERVER['HTTP_X_FORWARDED_HOST'];
+            }
+
+  - name: Set Reverse Proxy
+    ansible.builtin.template:
+        src: proxy_dnsname.j2
+        dest: /etc/nginx/conf.d/{{ app_name }}.conf
+#        src: proxy_subdir.j2
+#        dest: /etc/nginx/sites-enabled/{{ app_name }}.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+  - name: Reload Reverse Proxy
+    ansible.builtin.service:
+        name: nginx
+        state: reloaded
