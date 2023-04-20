@@ -1,0 +1,18 @@
+domain_name: local.tld.dom
+pod_dir: /storage/pods
+pod_name: wp11_pod
+
+db_name: db11
+db_user: wpuser
+db_pwd: wp11pwd
+db_root_pwd: DBrootPWD
+db_image: docker.io/mariadb:latest
+db_local_dir: db11
+db_pod_dir: /var/lib/mysql
+
+app_name: wp11
+app_port: 18011
+app_port_secure: 18411
+app_image: docker.io/wordpress
+app_local_dir: wp11
+app_pod_dir: /var/www/html
